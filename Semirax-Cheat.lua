@@ -209,6 +209,9 @@ RunService.RenderStepped:Connect(function()
                         
                         if distance < 40 then 
                             Target = head
+                        elseif mouseDist < MinDist then
+                            MinDist = mouseDist
+                            Target = head
                         end
                     end
                 end
