@@ -19,8 +19,7 @@ end
 
 local Flags = {
     Aimbot = true, TriggerBot = true, WH = true, TeamCheck = true, BHOP = true, StopShot = true,
-    ThirdPerson = false,
-    Radius = 80, ZOA_Visible = true, MenuOpen = true, CustomFOV = 70, NetOptimize = true
+    ThirdPerson = false, Radius = 80, ZOA_Visible = true, MenuOpen = true, CustomFOV = 70, NetOptimize = true
 }
 local Binds = {}
 local ESP_Data = {}
@@ -28,6 +27,7 @@ _G.Old_ESP = ESP_Data
 
 local CurrentSpeed = 16
 local LastSpeedUpdate = tick()
+local LastMousePos = UserInputService:GetMouseLocation()
 
 local ScreenGui = Instance.new("ScreenGui", CoreGui); ScreenGui.Name = "Semirax_Final_Code"
 local Main = Instance.new("Frame", ScreenGui)
@@ -87,7 +87,7 @@ local function CreateElement(name, flag)
     bBtn.MouseButton1Click:Connect(function() bBtn.Text = "..."; local conn; conn = UserInputService.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Keyboard then Binds[i.KeyCode] = {Flag = flag, Button = btn}; bBtn.Text = name .. ": " .. i.KeyCode.Name; conn:Disconnect() end end) end)
 end
 
-for _, v in pairs({"Aimbot", "TriggerBot", "WH", "BHOP", "NetOptimize", "StopShot", "ThirdPerson"}) do -- ДОБАВЛЕН ThirdPerson
+for _, v in pairs({"Aimbot", "TriggerBot", "WH", "BHOP", "NetOptimize", "StopShot", "ThirdPerson"}) do
     local displayName = (v == "StopShot") and "Stop-Shot" or (v == "ThirdPerson" and "Third Person" or v)
     CreateElement(displayName, v) 
 end
@@ -120,6 +120,10 @@ Players.PlayerAdded:Connect(AddESP)
 
 RunService.RenderStepped:Connect(function()
     local MouseLocation = UserInputService:GetMouseLocation()
+    local MouseDelta = (MouseLocation - LastMousePos).Magnitude
+    local IsSwiping = MouseDelta > 15 
+    LastMousePos = MouseLocation
+
     FOVCircle.Position = MouseLocation
     FOVCircle.Radius = Flags.Radius
     FOVCircle.Visible = Flags.ZOA_Visible
@@ -131,36 +135,33 @@ RunService.RenderStepped:Connect(function()
 
     if Char and Hum and Root then
         if Flags.StopShot and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-            Root.Velocity = Vector3.new(0, 0, 0)
-            Hum.WalkSpeed = 0
+            Root.Velocity = Vector3.new(0, 0, 0); Hum.WalkSpeed = 0
         else
             if Flags.BHOP and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
                 Hum.Jump = true
                 if tick() - LastSpeedUpdate >= 1 then 
-                    CurrentSpeed = math.clamp(CurrentSpeed + 3, 16, 120)
-                    LastSpeedUpdate = tick() 
+                    CurrentSpeed = math.clamp(CurrentSpeed + 3, 16, 120); LastSpeedUpdate = tick() 
                 end
                 Hum.WalkSpeed = CurrentSpeed
-            else 
-                CurrentSpeed = 16; Hum.WalkSpeed = 16 
+            else CurrentSpeed = 16; Hum.WalkSpeed = 16 end
+        end
+    end
+
+    if Flags.TriggerBot and Mouse.Target then
+        local t = Mouse.Target
+        if t.Parent:FindFirstChild("Humanoid") or (t.Parent.Parent and t.Parent.Parent:FindFirstChild("Humanoid")) then
+            local char = t.Parent:FindFirstChild("Humanoid") and t.Parent or t.Parent.Parent
+            local p = Players:GetPlayerFromCharacter(char)
+            if p and p ~= LocalPlayer and (not Flags.TeamCheck or p.Team ~= LocalPlayer.Team) then
+                if char.Humanoid.Health > 0 then
+                    mouse1press(); task.wait(0.01); mouse1release()
+                end
             end
         end
     end
 
     local Target, MinDist = nil, Flags.Radius
     
-    if Flags.TriggerBot then
-        local t = Mouse.Target
-        if t and t.Parent and t.Parent:FindFirstChild("Humanoid") then
-            local p = Players:GetPlayerFromCharacter(t.Parent)
-            if p and p ~= LocalPlayer and (not Flags.TeamCheck or p.Team ~= LocalPlayer.Team) then
-                if t.Parent.Humanoid.Health > 0 then
-                    mouse1press(); task.wait(); mouse1release()
-                end
-            end
-        end
-    end
-
     for p, d in pairs(ESP_Data) do
         local c = p.Character
         local h = c and c:FindFirstChildOfClass("Humanoid")
@@ -172,66 +173,40 @@ RunService.RenderStepped:Connect(function()
             local distance = (Root.Position - r.Position).Magnitude
             
             if d.Highlight then
-                d.Highlight.Parent = c
-                d.Highlight.Enabled = Flags.WH
-                d.Highlight.FillColor = isEnemy and Color3.new(1, 0, 0) or Color3.new(0, 0.5, 1)
-                d.Highlight.OutlineColor = Color3.new(1, 1, 1)
-                d.Highlight.FillTransparency = 0.5
+                d.Highlight.Parent = c; d.Highlight.Enabled = Flags.WH; d.Highlight.FillColor = isEnemy and Color3.new(1,0,0) or Color3.new(0,0.5,1)
             end
             
             if onScreen and Flags.WH and (not Flags.TeamCheck or isEnemy) then
                 local head = c:FindFirstChild("Head")
                 if head then
-                    local tP = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.8, 0))
-                    local bP = Camera:WorldToViewportPoint(r.Position - Vector3.new(0, 3, 0))
-                    local height = math.abs(tP.Y - bP.Y)
+                    local headPos, headOn = Camera:WorldToViewportPoint(head.Position)
+                    local height = math.abs(headPos.Y - Camera:WorldToViewportPoint(r.Position - Vector3.new(0,3,0)).Y)
                     
-                    d.Box.Visible = true
-                    d.Box.Size = Vector2.new(height/2, height)
-                    d.Box.Position = Vector2.new(pos.X - height/4, pos.Y - height/2)
-                    
-                    d.BarBack.Visible = true
-                    d.BarBack.Size = Vector2.new(4, height)
-                    d.BarBack.Position = Vector2.new(pos.X - height/4 - 6, pos.Y - height/2)
-                    
-                    d.Bar.Visible = true
+                    d.Box.Visible = true; d.Box.Size = Vector2.new(height/2, height); d.Box.Position = Vector2.new(pos.X - height/4, pos.Y - height/2)
+                    d.BarBack.Visible, d.Bar.Visible = true, true
                     d.Bar.Size = Vector2.new(2, height * (h.Health/h.MaxHealth))
-                    d.Bar.Position = Vector2.new(pos.X - height/4 - 5, (pos.Y + height/2) - (height * (h.Health/h.MaxHealth)))
-                    d.Bar.Color = Color3.fromHSV(h.Health/h.MaxHealth * 0.3, 1, 1)
-                    
-                    d.Tag.Visible = true
-                    d.Tag.Text = p.Name .. " [" .. math.floor(distance) .. "]"
-                    d.Tag.Position = Vector2.new(pos.X, pos.Y - height/2 - 20)
-                    
-                    if Flags.Aimbot and isEnemy then
-                        local screenPos = Vector2.new(pos.X, pos.Y)
-                        local mouseDist = (screenPos - MouseLocation).Magnitude
-                        
-                        if distance < 40 then 
-                            Target = head
-                        elseif mouseDist < MinDist then
-                            MinDist = mouseDist
-                            Target = head
+                    d.Tag.Visible = true; d.Tag.Text = p.Name .. " [" .. math.floor(distance) .. "]"; d.Tag.Position = Vector2.new(pos.X, pos.Y - height/2 - 20)
+
+                    if Flags.Aimbot and isEnemy and not IsSwiping then
+                        local screenHeadPos = Vector2.new(headPos.X, headPos.Y)
+                        local mouseDist = (screenHeadPos - MouseLocation).Magnitude
+                        if mouseDist < Flags.Radius and mouseDist < MinDist then
+                            MinDist = mouseDist; Target = head
                         end
                     end
                 end
-            else
-                d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false
-            end
-        else
-            d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false
-            if d.Highlight then d.Highlight.Enabled = false end
+            else d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false end
+        else d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false
+             if d.Highlight then d.Highlight.Enabled = false end
         end
     end
+
     if Flags.ThirdPerson and Root then
         Camera.CameraType = Enum.CameraType.Scriptable
-        local targetCFrame = CFrame.new(Root.Position) * Camera.CFrame.Rotation * CFrame.new(0, 2, 12)
-        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, 0.5)
-    else
-        Camera.CameraType = Enum.CameraType.Custom
-    end
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Root.Position) * Camera.CFrame.Rotation * CFrame.new(0, 2, 12), 0.5)
+    else Camera.CameraType = Enum.CameraType.Custom end
 
-    if Target and Flags.Aimbot then
+    if Target and Flags.Aimbot and not IsSwiping then
         Camera.CFrame = CFrame.new(Camera.CFrame.Position, Target.Position)
     end
 end)
