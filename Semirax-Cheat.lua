@@ -31,12 +31,10 @@ local Flags = {
     Aimbot = true, TriggerBot = true, WH = true, TeamCheck = true, BHOP = true, StopShot = true,
     ThirdPerson = false, Radius = 80, ZOA_Visible = true, MenuOpen = true, CustomFOV = 70, NetOptimize = true
 }
-local Binds = {}
-local ESP_Data = {}
+local Binds, ESP_Data = {}, {}
 _G.Old_ESP = ESP_Data
 
 local CurrentSpeed = 16
-local LastSpeedUpdate = tick()
 local LastMousePos = UserInputService:GetMouseLocation()
 
 local ScreenGui = Instance.new("ScreenGui", CoreGui); ScreenGui.Name = "Semirax_Final_Code"
@@ -99,7 +97,7 @@ end
 
 for _, v in pairs({"Aimbot", "TriggerBot", "WH", "BHOP", "NetOptimize", "StopShot", "ThirdPerson"}) do
     local displayName = (v == "StopShot") and "Stop-Shot" or (v == "ThirdPerson" and "Third Person" or v)
-    CreateElement(displayName, v) 
+    CreateElement(displayName, v)
 end
 
 local function CreateSlider(label, flag, min, max, step)
@@ -117,21 +115,11 @@ UserInputService.InputBegan:Connect(function(i, g) if not g and Binds[i.KeyCode]
 local FOVCircle = Drawing.new("Circle"); FOVCircle.Thickness = 2; FOVCircle.Color = Color3.new(1, 1, 1); FOVCircle.Transparency = 1; _G.ZOA_Circle = FOVCircle
 
 local function AddESP(p)
-    if p == LocalPlayer then return end
-    if ESP_Data[p] then return end
-    
-    ESP_Data[p] = { 
-        Box = Drawing.new("Square"), 
-        BarBack = Drawing.new("Square"), 
-        Bar = Drawing.new("Square"), 
-        Tag = Drawing.new("Text"), 
-        Highlight = Instance.new("Highlight") 
-    }
+    if p == LocalPlayer or ESP_Data[p] then return end
+    ESP_Data[p] = { Box = Drawing.new("Square"), BarBack = Drawing.new("Square"), Bar = Drawing.new("Square"), Tag = Drawing.new("Text"), Highlight = Instance.new("Highlight") }
     local d = ESP_Data[p]
-    d.Box.Thickness = 1.5; d.Box.Color = Color3.new(1,1,1)
-    d.Tag.Size = 14; d.Tag.Color = Color3.new(1,1,1); d.Tag.Outline = true; d.Tag.Center = true
-    d.BarBack.Filled, d.BarBack.Color, d.BarBack.Transparency = true, Color3.new(0,0,0), 0.5
-    d.Bar.Filled = true
+    d.Box.Thickness, d.Box.Color, d.Tag.Size, d.Tag.Color, d.Tag.Outline, d.Tag.Center = 1.5, Color3.new(1,1,1), 14, Color3.new(1,1,1), true, true
+    d.BarBack.Filled, d.BarBack.Color, d.BarBack.Transparency, d.Bar.Filled = true, Color3.new(0,0,0), 0.5, true
 end
 
 for _, p in pairs(Players:GetPlayers()) do AddESP(p) end
@@ -140,82 +128,49 @@ Players.PlayerRemoving:Connect(function(p) if ESP_Data[p] then FullyRemoveESP(ES
 
 RunService.RenderStepped:Connect(function()
     local MouseLocation = UserInputService:GetMouseLocation()
-    local MouseDelta = (MouseLocation - LastMousePos).Magnitude
-    local IsSwiping = MouseDelta > 15 
-    LastMousePos = MouseLocation
-
-    FOVCircle.Position = MouseLocation
-    FOVCircle.Radius = Flags.Radius
-    FOVCircle.Visible = Flags.ZOA_Visible
-    
-    -- ПРИНУДИТЕЛЬНЫЙ FOV (Работает всегда для точности ESP)
+    local IsSwiping = (MouseLocation - LastMousePos).Magnitude > 15; LastMousePos = MouseLocation
+    FOVCircle.Position, FOVCircle.Radius, FOVCircle.Visible = MouseLocation, Flags.Radius, Flags.ZOA_Visible
     Camera.FieldOfView = Flags.CustomFOV
     
     local Char = LocalPlayer.Character
-    local Hum = Char and Char:FindFirstChildOfClass("Humanoid")
-    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
-    
+    local Hum, Root = Char and Char:FindFirstChildOfClass("Humanoid"), Char and Char:FindFirstChild("HumanoidRootPart")
     local IsAlive = (Char and Hum and Root and Hum.Health > 0)
 
     if IsAlive then
         if Flags.StopShot and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-            Root.Velocity = Vector3.new(0, 0, 0); Hum.WalkSpeed = 0
-        else
-            if Flags.BHOP and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                Hum.Jump = true
-                if tick() - LastSpeedUpdate >= 1 then 
-                    CurrentSpeed = math.clamp(CurrentSpeed + 3, 16, 120); LastSpeedUpdate = tick() 
-                end
-                Hum.WalkSpeed = CurrentSpeed
-            else CurrentSpeed = 16; Hum.WalkSpeed = 16 end
-        end
+            Root.Velocity, Hum.WalkSpeed = Vector3.new(0, 0, 0), 0
+        elseif Flags.BHOP and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            Hum.Jump = true
+            CurrentSpeed = math.clamp(CurrentSpeed + 0.3, 16, 45) -- Плавный банихоп (до 45 скорости)
+            Hum.WalkSpeed = CurrentSpeed
+        else CurrentSpeed, Hum.WalkSpeed = 16, 16 end
     end
 
-    -- ESP & Aimbot Loop
     local Target, MinDist = nil, Flags.Radius
-    
     for p, d in pairs(ESP_Data) do
         local c = p.Character
-        local h = c and c:FindFirstChildOfClass("Humanoid")
-        local r = c and c:FindFirstChild("HumanoidRootPart")
-        
+        local h, r = c and c:FindFirstChildOfClass("Humanoid"), c and c:FindFirstChild("HumanoidRootPart")
         if c and h and r and h.Health > 0 then
             local isEnemy = (p.Team ~= LocalPlayer.Team)
             local pos, onScreen = Camera:WorldToViewportPoint(r.Position)
-            local distance = (Camera.CFrame.Position - r.Position).Magnitude
-            
-            if d.Highlight then
-                d.Highlight.Parent = c; d.Highlight.Enabled = Flags.WH; d.Highlight.FillColor = isEnemy and Color3.new(1,0,0) or Color3.new(0,0.5,1)
-            end
-            
+            if d.Highlight then d.Highlight.Parent, d.Highlight.Enabled, d.Highlight.FillColor = c, Flags.WH, isEnemy and Color3.new(1,0,0) or Color3.new(0,0.5,1) end
             if onScreen and Flags.WH and (not Flags.TeamCheck or isEnemy) then
                 local head = c:FindFirstChild("Head")
                 if head then
-                    local headPos = Camera:WorldToViewportPoint(head.Position)
-                    local legWorldPos = r.Position - Vector3.new(0, 3, 0)
-                    local legPos = Camera:WorldToViewportPoint(legWorldPos)
-                    
-                    local height = math.abs(headPos.Y - legPos.Y)
-                    local width = height / 2
-                    
-                    d.Box.Visible = true; d.Box.Size = Vector2.new(width, height); d.Box.Position = Vector2.new(pos.X - width/2, pos.Y - height/2)
+                    local headPos, legPos = Camera:WorldToViewportPoint(head.Position), Camera:WorldToViewportPoint(r.Position - Vector3.new(0, 3, 0))
+                    local height, width = math.abs(headPos.Y - legPos.Y), math.abs(headPos.Y - legPos.Y) / 2
+                    d.Box.Visible, d.Box.Size, d.Box.Position = true, Vector2.new(width, height), Vector2.new(pos.X - width/2, pos.Y - height/2)
                     d.BarBack.Visible, d.Bar.Visible = true, true
-                    d.BarBack.Size = Vector2.new(4, height); d.BarBack.Position = Vector2.new(pos.X - width/2 - 6, pos.Y - height/2)
-                    d.Bar.Size = Vector2.new(2, height * (h.Health/h.MaxHealth)); d.Bar.Position = Vector2.new(pos.X - width/2 - 5, pos.Y + height/2 - d.Bar.Size.Y)
-                    d.Bar.Color = Color3.new(1 - (h.Health/100), h.Health/100, 0)
-                    d.Tag.Visible = true; d.Tag.Text = p.Name .. " [" .. math.floor(distance) .. "]"; d.Tag.Position = Vector2.new(pos.X, pos.Y - height/2 - 20)
-
+                    d.BarBack.Size, d.BarBack.Position = Vector2.new(4, height), Vector2.new(pos.X - width/2 - 6, pos.Y - height/2)
+                    d.Bar.Size, d.Bar.Position = Vector2.new(2, height * (h.Health/h.MaxHealth)), Vector2.new(pos.X - width/2 - 5, pos.Y + height/2 - (height * (h.Health/h.MaxHealth)))
+                    d.Bar.Color, d.Tag.Visible = Color3.new(1 - (h.Health/100), h.Health/100, 0), true
+                    d.Tag.Text, d.Tag.Position = p.Name .. " [" .. math.floor((Camera.CFrame.Position - r.Position).Magnitude) .. "]", Vector2.new(pos.X, pos.Y - height/2 - 20)
                     if IsAlive and Flags.Aimbot and isEnemy and not IsSwiping then
-                        local screenHeadPos = Vector2.new(headPos.X, headPos.Y)
-                        local mouseDist = (screenHeadPos - MouseLocation).Magnitude
-                        if mouseDist < Flags.Radius and mouseDist < MinDist then
-                            MinDist = mouseDist; Target = head
-                        end
+                        local mouseDist = (Vector2.new(headPos.X, headPos.Y) - MouseLocation).Magnitude
+                        if mouseDist < Flags.Radius and mouseDist < MinDist then MinDist, Target = mouseDist, head end
                     end
                 end
-            else
-                d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false
-            end
+            else d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false end
         else 
             d.Box.Visible, d.Tag.Visible, d.Bar.Visible, d.BarBack.Visible = false, false, false, false
             if d.Highlight then d.Highlight.Enabled = false end
@@ -226,23 +181,15 @@ RunService.RenderStepped:Connect(function()
         local char = Mouse.Target.Parent:FindFirstChild("Humanoid") and Mouse.Target.Parent or (Mouse.Target.Parent.Parent and Mouse.Target.Parent.Parent:FindFirstChild("Humanoid") and Mouse.Target.Parent.Parent)
         if char then
             local p = Players:GetPlayerFromCharacter(char)
-            if p and p ~= LocalPlayer and (not Flags.TeamCheck or p.Team ~= LocalPlayer.Team) and char.Humanoid.Health > 0 then
-                mouse1press(); task.wait(0.01); mouse1release()
-            end
+            if p and p ~= LocalPlayer and (not Flags.TeamCheck or p.Team ~= LocalPlayer.Team) and char.Humanoid.Health > 0 then mouse1press(); task.wait(0.01); mouse1release() end
         end
     end
 
-    -- Кастомные режимы камеры (Только когда жив)
     if IsAlive then
         if Flags.ThirdPerson and Root then
             Camera.CameraType = Enum.CameraType.Scriptable
             Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Root.Position) * Camera.CFrame.Rotation * CFrame.new(0, 2, 12), 0.5)
-        else 
-            Camera.CameraType = Enum.CameraType.Custom 
-        end
-
-        if Target and Flags.Aimbot and not IsSwiping then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, Target.Position)
-        end
+        else Camera.CameraType = Enum.CameraType.Custom end
+        if Target and Flags.Aimbot and not IsSwiping then Camera.CFrame = CFrame.new(Camera.CFrame.Position, Target.Position) end
     end
 end)
